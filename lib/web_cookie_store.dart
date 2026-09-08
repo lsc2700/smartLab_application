@@ -19,11 +19,13 @@ class WebCookieStore {
       return;
     }
 
+    final now = DateTime.now().millisecondsSinceEpoch;
     final items = (jsonDecode(raw) as List<dynamic>).whereType<Map>();
     for (final item in items) {
       final name = '${item['name'] ?? ''}';
       final value = '${item['value'] ?? ''}';
-      if (name.isEmpty) {
+      final expiresDate = item['expiresDate'] as int?;
+      if (name.isEmpty || expiresDate == null || expiresDate <= now) {
         continue;
       }
       await _cookies.setCookie(
@@ -32,8 +34,7 @@ class WebCookieStore {
         value: value,
         domain: item['domain'] as String? ?? 'smartlab-admin.co.kr',
         path: item['path'] as String? ?? '/',
-        expiresDate: item['expiresDate'] as int? ??
-            DateTime.now().add(const Duration(days: 30)).millisecondsSinceEpoch,
+        expiresDate: expiresDate,
         isSecure: item['isSecure'] as bool? ?? true,
         isHttpOnly: item['isHttpOnly'] as bool? ?? false,
         sameSite: _sameSite(item['sameSite'] as String?),
@@ -42,21 +43,29 @@ class WebCookieStore {
   }
 
   static Future<void> save() async {
+    final now = DateTime.now().millisecondsSinceEpoch;
     final cookies = await _cookies.getCookies(url: smartLabOrigin);
-    final payload = cookies
-        .map(
-          (cookie) => {
-            'name': cookie.name,
-            'value': cookie.value,
-            'domain': cookie.domain,
-            'path': cookie.path,
-            'expiresDate': cookie.expiresDate,
-            'isSecure': cookie.isSecure,
-            'isHttpOnly': cookie.isHttpOnly,
-            'sameSite': cookie.sameSite?.toNativeValue(),
-          },
-        )
-        .toList();
+    final payload = cookies.where((cookie) {
+      final expiresDate = cookie.expiresDate;
+      if (expiresDate == null || expiresDate <= now) {
+        return false;
+      }
+      if (cookie.isSessionOnly == true) {
+        return false;
+      }
+      return true;
+    }).map(
+      (cookie) => {
+        'name': cookie.name,
+        'value': cookie.value,
+        'domain': cookie.domain,
+        'path': cookie.path,
+        'expiresDate': cookie.expiresDate,
+        'isSecure': cookie.isSecure,
+        'isHttpOnly': cookie.isHttpOnly,
+        'sameSite': cookie.sameSite?.toNativeValue(),
+      },
+    ).toList();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_cookieKey, jsonEncode(payload));
     await _cookies.flush();
