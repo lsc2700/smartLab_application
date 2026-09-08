@@ -1,64 +1,94 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 
-class CctvCamera {
-  const CctvCamera({
-    required this.ip,
-    required this.user,
-    required this.password,
-  });
+import 'cctv_channel_tile.dart';
+import 'cctv_nvr.dart';
 
-  final String ip;
-  final String user;
-  final String password;
+class CctvPlayerPage extends StatefulWidget {
+  const CctvPlayerPage({super.key, required this.nvr});
 
-  WebUri get uri {
-    final raw = ip.contains('://') ? ip : 'http://$ip';
-    return WebUri(raw);
-  }
+  final CctvNvr nvr;
+
+  @override
+  State<CctvPlayerPage> createState() => _CctvPlayerPageState();
 }
 
-class CctvPlayerPage extends StatelessWidget {
-  const CctvPlayerPage({super.key, required this.camera});
+class _CctvPlayerPageState extends State<CctvPlayerPage> {
+  int _page = 0;
+  int? _fullscreenChannel;
 
-  final CctvCamera camera;
+  int get _pageCount => (hikvisionChannelCount / 4).ceil();
+
+  List<int> get _channels {
+    final start = _page * 4 + 1;
+    return [for (var i = start; i < start + 4 && i <= hikvisionChannelCount; i++) i];
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (_fullscreenChannel != null) {
+      final channel = _fullscreenChannel!;
+      return Scaffold(
+        backgroundColor: Colors.black,
+        appBar: AppBar(
+          backgroundColor: Colors.black,
+          foregroundColor: Colors.white,
+          title: Text('CH $channel'),
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: () => setState(() => _fullscreenChannel = null),
+          ),
+        ),
+        body: CctvChannelTile(
+          rtspUrl: widget.nvr.mainStreamUrl(channel),
+          label: 'CH $channel',
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
         backgroundColor: Colors.black,
         foregroundColor: Colors.white,
-        title: Text(camera.ip, style: const TextStyle(fontSize: 16)),
+        title: const Text('CCTV'),
       ),
-      body: InAppWebView(
-        initialUrlRequest: URLRequest(url: camera.uri),
-        initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
-          mediaPlaybackRequiresUserGesture: false,
-          allowsInlineMediaPlayback: true,
-          mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-          useHybridComposition: true,
-          supportZoom: true,
-          hardwareAcceleration: true,
-        ),
-        onReceivedHttpAuthRequest: (controller, challenge) async {
-          if (camera.user.isEmpty) {
-            return HttpAuthResponse(action: HttpAuthResponseAction.CANCEL);
-          }
-          return HttpAuthResponse(
-            username: camera.user,
-            password: camera.password,
-            action: HttpAuthResponseAction.PROCEED,
-            permanentPersistence: true,
-          );
-        },
-        onReceivedServerTrustAuthRequest: (controller, challenge) async {
-          return ServerTrustAuthResponse(
-            action: ServerTrustAuthResponseAction.PROCEED,
-          );
-        },
+      body: Column(
+        children: [
+          Expanded(
+            child: GridView.count(
+              key: ValueKey('cctv-page-$_page'),
+              crossAxisCount: 2,
+              physics: const NeverScrollableScrollPhysics(),
+              children: _channels
+                  .map(
+                    (channel) => CctvChannelTile(
+                      key: ValueKey('grid-$_page-$channel'),
+                      rtspUrl: widget.nvr.subStreamUrl(channel),
+                      label: 'CH $channel',
+                      onTap: () => setState(() => _fullscreenChannel = channel),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(
+                onPressed: _page == 0 ? null : () => setState(() => _page -= 1),
+                icon: const Icon(Icons.chevron_left, color: Colors.white),
+              ),
+              Text(
+                '${_page + 1} / $_pageCount',
+                style: const TextStyle(color: Colors.white70),
+              ),
+              IconButton(
+                onPressed: _page >= _pageCount - 1 ? null : () => setState(() => _page += 1),
+                icon: const Icon(Icons.chevron_right, color: Colors.white),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

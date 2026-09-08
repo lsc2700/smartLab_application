@@ -1,15 +1,16 @@
 import 'package:flutter/material.dart';
 
+import 'cctv_nvr.dart';
 import 'cctv_player_page.dart';
 
 Future<void> handleCctvInfo(BuildContext context, List<dynamic> args) async {
-  final cameras = _normalizeCameras(args);
-  if (cameras.isEmpty || !context.mounted) {
+  final nvrs = _normalizeNvrs(args);
+  if (nvrs.isEmpty || !context.mounted) {
     return;
   }
 
-  if (cameras.length == 1) {
-    await _openPlayer(context, cameras.first);
+  if (nvrs.length == 1) {
+    await _openPlayer(context, nvrs.first);
     return;
   }
 
@@ -32,14 +33,14 @@ Future<void> handleCctvInfo(BuildContext context, List<dynamic> args) async {
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
               ),
             ),
-            ...cameras.map((camera) {
+            ...nvrs.map((nvr) {
               return ListTile(
                 leading: const Icon(Icons.videocam_outlined),
-                title: Text(camera.ip),
-                subtitle: camera.user.isEmpty ? null : Text(camera.user),
+                title: Text(nvr.ip),
+                subtitle: nvr.user.isEmpty ? null : Text(nvr.user),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  _openPlayer(context, camera);
+                  _openPlayer(context, nvr);
                 },
               );
             }),
@@ -50,15 +51,15 @@ Future<void> handleCctvInfo(BuildContext context, List<dynamic> args) async {
   );
 }
 
-Future<void> _openPlayer(BuildContext context, CctvCamera camera) {
+Future<void> _openPlayer(BuildContext context, CctvNvr nvr) {
   return Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => CctvPlayerPage(camera: camera),
+      builder: (_) => CctvPlayerPage(nvr: nvr),
     ),
   );
 }
 
-List<CctvCamera> _normalizeCameras(List<dynamic> args) {
+List<CctvNvr> _normalizeNvrs(List<dynamic> args) {
   if (args.isEmpty) {
     return [];
   }
@@ -66,7 +67,7 @@ List<CctvCamera> _normalizeCameras(List<dynamic> args) {
   final raw = args.first;
   final items = raw is List ? raw : [raw];
   return items.whereType<Map>().map((item) {
-    return CctvCamera(
+    return CctvNvr(
       ip: '${item['ipAddress'] ?? ''}',
       user: '${item['cctvUser'] ?? item['id'] ?? ''}',
       password: '${item['cctvPassword'] ?? item['pw'] ?? ''}',
