@@ -4,6 +4,7 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'cctv_bridge.dart';
+import 'web_cookie_store.dart';
 
 const smartLabUrl = 'https://smartlab-admin.co.kr';
 
@@ -31,15 +32,20 @@ class SmartLabWebViewPage extends StatefulWidget {
   State<SmartLabWebViewPage> createState() => _SmartLabWebViewPageState();
 }
 
-class _SmartLabWebViewPageState extends State<SmartLabWebViewPage> {
+class _SmartLabWebViewPageState extends State<SmartLabWebViewPage>
+    with WidgetsBindingObserver {
   InAppWebViewController? _controller;
   double _progress = 0;
   bool _loadedOnce = false;
+  bool _cookiesReady = false;
 
   InAppWebViewSettings get _settings => InAppWebViewSettings(
         javaScriptEnabled: true,
         domStorageEnabled: true,
         databaseEnabled: true,
+        incognito: false,
+        cacheEnabled: true,
+        cacheMode: CacheMode.LOAD_DEFAULT,
         javaScriptCanOpenWindowsAutomatically: true,
         mediaPlaybackRequiresUserGesture: false,
         allowsInlineMediaPlayback: true,
@@ -58,10 +64,37 @@ class _SmartLabWebViewPageState extends State<SmartLabWebViewPage> {
         useOnDownloadStart: true,
         transparentBackground: false,
         hardwareAcceleration: true,
-        cacheEnabled: true,
-        clearCache: false,
         preferredContentMode: UserPreferredContentMode.MOBILE,
       );
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _restoreCookies();
+  }
+
+  Future<void> _restoreCookies() async {
+    await WebCookieStore.restore();
+    if (mounted) {
+      setState(() => _cookiesReady = true);
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      WebCookieStore.save();
+    }
+  }
 
   Future<bool> _handleBack() async {
     final controller = _controller;
@@ -89,87 +122,89 @@ class _SmartLabWebViewPageState extends State<SmartLabWebViewPage> {
         body: SafeArea(
           child: Stack(
             children: [
-              InAppWebView(
-                initialUrlRequest: URLRequest(url: WebUri(smartLabUrl)),
-                initialSettings: _settings,
-                onWebViewCreated: (controller) {
-                  _controller = controller;
-                  controller.addJavaScriptHandler(
-                    handlerName: 'cctvInfoHandler',
-                    callback: (args) async {
-                      await handleCctvInfo(context, args);
-                      return {'ok': true};
-                    },
-                  );
-                },
-                onLoadStop: (controller, url) {
-                  if (mounted) {
-                    setState(() {
-                      _loadedOnce = true;
-                      _progress = 1;
-                    });
-                  }
-                },
-                onProgressChanged: (controller, progress) {
-                  if (mounted) {
-                    setState(() => _progress = progress / 100);
-                  }
-                },
-                onPermissionRequest: (controller, request) async {
-                  return PermissionResponse(
-                    resources: request.resources,
-                    action: PermissionResponseAction.GRANT,
-                  );
-                },
-                onGeolocationPermissionsShowPrompt: (controller, origin) async {
-                  return GeolocationPermissionShowPromptResponse(
-                    origin: origin,
-                    allow: true,
-                    retain: true,
-                  );
-                },
-                shouldOverrideUrlLoading: (controller, action) async {
-                  final uri = action.request.url;
-                  if (uri == null) {
-                    return NavigationActionPolicy.ALLOW;
-                  }
-                  final scheme = uri.scheme;
-                  if (scheme == 'http' || scheme == 'https') {
-                    return NavigationActionPolicy.ALLOW;
-                  }
-                  if (await canLaunchUrl(uri)) {
-                    await launchUrl(uri, mode: LaunchMode.externalApplication);
-                  }
-                  return NavigationActionPolicy.CANCEL;
-                },
-                onReceivedServerTrustAuthRequest: (controller, challenge) async {
-                  return ServerTrustAuthResponse(
-                    action: ServerTrustAuthResponseAction.PROCEED,
-                  );
-                },
-                onCreateWindow: (controller, request) async {
-                  final url = request.request.url;
-                  if (url != null) {
-                    await controller.loadUrl(urlRequest: URLRequest(url: url));
-                  }
-                  return false;
-                },
-              ),
-              if (_progress < 1)
+              if (_cookiesReady)
+                InAppWebView(
+                  initialUrlRequest: URLRequest(url: WebUri(smartLabUrl)),
+                  initialSettings: _settings,
+                  onWebViewCreated: (controller) {
+                    _controller = controller;
+                    controller.addJavaScriptHandler(
+                      handlerName: 'cctvInfoHandler',
+                      callback: (args) async {
+                        await handleCctvInfo(context, args);
+                        return {'ok': true};
+                      },
+                    );
+                  },
+                  onLoadStop: (controller, url) {
+                    WebCookieStore.save();
+                    if (mounted) {
+                      setState(() {
+                        _loadedOnce = true;
+                        _progress = 1;
+                      });
+                    }
+                  },
+                  onProgressChanged: (controller, progress) {
+                    if (mounted) {
+                      setState(() => _progress = progress / 100);
+                    }
+                  },
+                  onPermissionRequest: (controller, request) async {
+                    return PermissionResponse(
+                      resources: request.resources,
+                      action: PermissionResponseAction.GRANT,
+                    );
+                  },
+                  onGeolocationPermissionsShowPrompt: (controller, origin) async {
+                    return GeolocationPermissionShowPromptResponse(
+                      origin: origin,
+                      allow: true,
+                      retain: true,
+                    );
+                  },
+                  shouldOverrideUrlLoading: (controller, action) async {
+                    final uri = action.request.url;
+                    if (uri == null) {
+                      return NavigationActionPolicy.ALLOW;
+                    }
+                    final scheme = uri.scheme;
+                    if (scheme == 'http' || scheme == 'https') {
+                      return NavigationActionPolicy.ALLOW;
+                    }
+                    if (await canLaunchUrl(uri)) {
+                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                    }
+                    return NavigationActionPolicy.CANCEL;
+                  },
+                  onReceivedServerTrustAuthRequest: (controller, challenge) async {
+                    return ServerTrustAuthResponse(
+                      action: ServerTrustAuthResponseAction.PROCEED,
+                    );
+                  },
+                  onCreateWindow: (controller, request) async {
+                    final url = request.request.url;
+                    if (url != null) {
+                      await controller.loadUrl(urlRequest: URLRequest(url: url));
+                    }
+                    return false;
+                  },
+                ),
+              if (!_cookiesReady || _progress < 1)
                 LinearProgressIndicator(
-                  value: _progress == 0 ? null : _progress,
+                  value: !_cookiesReady || _progress == 0 ? null : _progress,
                   minHeight: 2,
                   color: const Color(0xFF1B4F72),
                   backgroundColor: Colors.transparent,
                 ),
-              if (!_loadedOnce && _progress < 0.9)
+              if (!_loadedOnce)
                 const Center(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       CircularProgressIndicator(),
                       SizedBox(height: 16),
-                      Text('스마트랩'),
+                      Text('smartlab'),
                     ],
                   ),
                 ),
