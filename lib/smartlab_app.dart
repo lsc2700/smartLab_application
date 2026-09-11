@@ -56,6 +56,7 @@ class _SmartLabWebViewPageState extends State<SmartLabWebViewPage>
         supportZoom: false,
         builtInZoomControls: false,
         displayZoomControls: false,
+        textZoom: 100,
         thirdPartyCookiesEnabled: true,
         sharedCookiesEnabled: true,
         geolocationEnabled: true,
